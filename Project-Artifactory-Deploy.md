@@ -248,3 +248,31 @@ helm upgrade --install artifactory jfrog/artifactory --version 107.38.10 -n tool
 * We have used upgrade --install flag here instead of helm install artifactory jfrog/artifactory This is a better practice, especially when developing CI pipelines for helm deployments. It ensures that helm does an upgrade if there is an existing installation. But if there isn't, it does the initial install. With this strategy, the command will never fail. It will be smart enough to determine if an upgrade or fresh installation is required.
 
 * The helm chart version to install is very important to specify. So, the version at the time of writing may be different from what you will see from Artifact Hub. So, replace the version number to the desired. You can see all the versions by clicking on "see all" as shown in the image below.
+
+Check the output from the installation for some next step directives.
+
+#### Getting the Artifactory URL
+
+Lets break down the first Next Step.
+
+
+1. The artifactory helm chart comes bundled with the Artifactory software, a PostgreSQL database and an Nginx proxy which it uses to configure routes to the different capabilities of Artifactory. Getting the pods after some time, you should see something like the below.
+
+![alt text](<images/13. artifactory pods.jpg>)
+
+2. Each of the deployed application have their respective services. This is how you will be able to reach either of them.
+
+![alt text](<images/14. svc jfrog.jpg>)
+
+3. Notice that, the Nginx Proxy has been configured to use the service type of LoadBalancer. Therefore, to reach Artifactory, we will need to go through the Nginx proxy's service. Which happens to be a load balancer created in the cloud provider. Run the kubectl command to retrieve the Load Balancer URL.
+
+```
+kubectl get svc artifactory-artifactory-nginx -n tools
+```
+
+4. Copy the URL and paste in the browser
+ 
+ 
+ 
+ 5. The default username is admin
+The default password is password
