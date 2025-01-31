@@ -205,3 +205,46 @@ aws eks create-addon --cluster-name $cluster_name --addon-name aws-ebs-csi-drive
   --service-account-role-arn arn:aws:iam::619071319479:role/AmazonEKS_EBS_CSI_DriverRole --region us-west-1
 ```
 ![alt text](<images/10 create ebs add-on.jpg>)
+
+Check the kube-system namespace and view the pods added.
+
+```
+kubectl get pods -n kube-system
+```
+![alt text](<images/10. check ns.jpg>)
+
+#### Deploy Tools in Kubernetes
+
+**Artifactory**
+The best approach to easily get Artifactory into kubernetes is to use helm.
+
+1. Search for an official helm chart for Artifactory on [Artifact Hub](https://artifacthub.io/)
+
+2. Add the jfrog remote repository on your PC
+```
+helm repo add jfrog https://charts.jfrog.io
+``` 
+
+3. Create a namespace ```tools``` where all DevOps tools will be deployed.
+```
+kubectl create ns tools
+```
+4. Update the helm repo index
+```
+helm repo update
+```
+
+5. Install artifactory
+
+```
+helm upgrade --install artifactory jfrog/artifactory --version 107.38.10 -n tools
+```
+
+![alt text](<images/11. artifactory helm install.jpg>)
+
+
+**NB**
+
+* We have used upgrade --install flag here instead of helm install artifactory jfrog/artifactory This is a better practice, especially when developing CI pipelines for helm deployments. It ensures that helm does an upgrade if there is an existing installation. But if there isn't, it does the initial install. With this strategy, the command will never fail. It will be smart enough to determine if an upgrade or fresh installation is required.
+
+* The helm chart version to install is very important to specify. So, the version at the time of writing may be different from what you will see from Artifact Hub. So, replace the version number to the desired. You can see all the versions by clicking on "see all" as shown in the image below.
