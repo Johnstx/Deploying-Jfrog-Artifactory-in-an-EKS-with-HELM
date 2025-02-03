@@ -303,4 +303,250 @@ Below shows how ingress sends traffic to a service.
 ![alt text](images/20.png)
 *image credit:* kubernetes.io
 An ingress resource for Artifactory would like like below
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: artifactory
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: "tooling.artifactory.itentity.xyz"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: staxx-artifactory-artifactory-nginx
+            port:
+              number: 80
+```
+
+* An Ingress needs ```apiVersion```, ```kind```, ```metadata``` and ```spec``` fields
+* The name of an Ingress object must be a valid DNS subdomain name
+* Ingress frequently uses annotations to configure some options depending on the Ingress controller.
+* Different Ingress controllers support different annotations. Therefore it is important to be up to date with the ingress controller's specific documentation to know what annotations are supported.
+* It is recommended to always specify the ingress class name with the spec ```ingressClassName: nginx```. This is how the Ingress controller is selected, especially when there are multiple configured ingress controllers in the cluster.
+The domain ```itentity.xyz``` should be replaced with your own domain.
+
+
+
+**Ingress controller**
+If you deploy the yaml configuration specified for the ingress resource without an ingress controller, it will not work. In order for the Ingress resource to work, the cluster must have an ingress controller running.
+
+Unlike other types of controllers which run as part of the kube-controller-manager. Such as the Node Controller, Replica Controller, Deployment Controller, Job Controller, or Cloud Controller. Ingress controllers are not started automatically with the cluster.
+
+
+Branches
+Commits
+Tags
+Repository graph
+Compare revisions
+Snippets
+
+Build
+
+Deploy
+
+Operate
+
+Monitor
+
+Analyze
+Anthony Akoji
+Darey-PBL-Temp
+Repository
+darey-pbl-temp
+Project-25
+project25.md
+project25.md
+AKOJI ANTHONY's avatar
+add project 25,26 and 27
+AKOJI ANTHONY authored 1 year ago
+5bb751f9
+project25.md
+43.13 KiB
+Deploying and Packaging applications into Kubernetes with Helm
+In the previous project, you started experiencing helm as a tool used to deploy an application into Kubernetes. You probably also tried installing more tools apart from Jenkins.
+
+In this project, you will experience deploying more DevOps tools, get familiar with some of the real world issues faced during such deployments and how to fix them. You will learn how to tweak helm values files to automate the configuration of the applications you deploy. Finally, once you have most of the DevOps tools deployed, you will experience using them and relate with the DevOps cycle and how they fit into the entire ecosystem.
+
+Our focus will be on the.
+
+Artifactory
+Ingress Controllers
+Cert-Manager
+Then you will attempt to explore these on your own.
+
+Prometheus
+Grafana
+Elasticsearch ELK using ECK
+For the tools that require paid license, don't worry, you will also learn how to get the license for free and have true experience exactly how they are used in the real world.
+
+Lets start first with Artifactory. What is it exactly?
+
+Artifactory is part of a suit of products from a company called Jfrog. Jfrog started out as an artifact repository where software binaries in different formats are stored. Today, Jfrog has transitioned from an artifact repository to a DevOps Platform that includes CI and CD capabilities. This has been achieved by offering more products in which Jfrog Artifactory is part of. Other offerings include
+
+JFrog Pipelines - a CI-CD product that works well with its Artifactory repository. Think of this product as an alternative to Jenkins.
+JFrog Xray - a security product that can be built-into various steps within a JFrog pipeline. Its job is to scan for security vulnerabilities in the stored artifacts. It is able to scan all dependent code.
+In this project, the requirement is to use Jfrog Artifactory as a private registry for the organisation's Docker images and Helm charts. This requirement will satisfy part of the company's corporate security policies to never download artifacts directly from the public into production systems. We will eventually have a CI pipeline that initially pulls public docker images and helm charts from the internet, store in artifactory and scan the artifacts for security vulnerabilities before deploying into the corporate infrastructure. Any found vulnerabilities will immediately trigger an action to quarantine such artifacts.
+
+Lets get into action and see how all of these work.
+
+Deploy Jfrog Artifactory into Kubernetes
+The best approach to easily get Artifactory into kubernetes is to use helm.
+
+Search for an official helm chart for Artifactory on Artifact Hub
+ 2. Click on **See all results** 3. Use the filter checkbox on the left to limit the return data. As you can see in the image below, "Helm" is selected. In some cases, you might select "Official". Then click on the first option from the result.  4. Review the Artifactory page  5. Click on the install menu on the right to see the installation commands.
+<img src="https://darey-io-nonprod-pbl-projects.s3.eu-west-2.amazonaws.com/project25/click-install.png" width="936px" height="550px">
+Add the jfrog remote repository on your laptop/computer
+helm repo add jfrog https://charts.jfrog.io
+Create a namespace called tools where all the tools for DevOps will be deployed. (In previous project, you installed Jenkins in the default namespace. You should uninstall Jenkins there and install in the new namespace)
+kubectl create ns tools
+Update the helm repo index on your laptop/computer
+helm repo update
+Install artifactory
+helm upgrade --install artifactory jfrog/artifactory --version 107.38.10 -n tools
+Release "artifactory" does not exist. Installing it now.
+NAME: artifactory
+LAST DEPLOYED: Sat May 28 09:26:08 2022
+NAMESPACE: tools
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+Congratulations. You have just deployed JFrog Artifactory!
+
+1. Get the Artifactory URL by running these commands:
+
+   NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+         You can watch the status of the service by running 'kubectl get svc --namespace tools -w artifactory-artifactory-nginx'
+   export SERVICE_IP=$(kubectl get svc --namespace tools artifactory-artifactory-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+   echo http://$SERVICE_IP/
+
+2. Open Artifactory in your browser
+   Default credential for Artifactory:
+   user: admin
+   password: password
+NOTE:
+
+We have used upgrade --install flag here instead of helm install artifactory jfrog/artifactory This is a better practice, especially when developing CI pipelines for helm deployments. It ensures that helm does an upgrade if there is an existing installation. But if there isn't, it does the initial install. With this strategy, the command will never fail. It will be smart enough to determine if an upgrade or fresh installation is required.
+The helm chart version to install is very important to specify. So, the version at the time of writing may be different from what you will see from Artifact Hub. So, replace the version number to the desired. You can see all the versions by clicking on "see all" as shown in the image below.  
+The output from the installation already gives some Next step directives.
+
+Getting the Artifactory URL
+Lets break down the first Next Step.
+
+The artifactory helm chart comes bundled with the Artifactory software, a PostgreSQL database and an Nginx proxy which it uses to configure routes to the different capabilities of Artifactory. Getting the pods after some time, you should see something like the below.
+
+
+Each of the deployed application have their respective services. This is how you will be able to reach either of them. 
+
+Notice that, the Nginx Proxy has been configured to use the service type of LoadBalancer. Therefore, to reach Artifactory, we will need to go through the Nginx proxy's service. Which happens to be a load balancer created in the cloud provider. Run the kubectl command to retrieve the Load Balancer URL.
+
+kubectl get svc artifactory-artifactory-nginx -n tools
+Copy the URL and paste in the browser
+
+
+The default username is admin
+
+The default password is password
+
+
+How the Nginx URL for Artifactory is configured in Kubernetes
+Without clicking further on the Get Started page, lets dig a bit more into Kubernetes and Helm. How did Helm configure the URL in kubernetes?
+
+Helm uses the values.yaml file to set every single configuration that the chart has the capability to configure. THe best place to get started with an off the shelve chart from artifacthub.io is to get familiar with the DEFAULT VALUES
+
+click on the DEFAULT VALUES section on Artifact hub 
+Here you can search for key and value pairs 
+For example, when you type nginx in the search bar, it shows all the configured options for the nginx proxy. 
+selecting nginx.enabled from the list will take you directly to the configuration in the YAML file. 
+Search for nginx.service and select nginx.service.type 
+You will see the confired type of Kubernetes service for Nginx. As you can see, it is LoadBalancer by default 
+To work directly with the values.yaml file, you can download the file locally by clicking on the download icon. 
+Is the Load Balancer Service type the Ideal configuration option to use in the Real World?
+Setting the service type to Load Balancer is the easiest way to get started with exposing applications running in kubernetes externally. But provissioning load balancers for each application can become very expensive over time, and more difficult to manage. Especially when tens or even hundreds of applications are deployed.
+
+The best approach is to use Kubernetes Ingress instead. But to do that, we will have to deploy an Ingress Controller.
+
+A huge benefit of using the ingress controller is that we will be able to use a single load balancer for different applications we deploy. Therefore, Artifactory and any other tools can reuse the same load balancer. Which reduces cloud cost, and overhead of managing multiple load balancers. more on that later.
+
+For now, we will leave artifactory, move on to the next phase of configuration (Ingress, DNS(Route53) and Cert Manager), and then return to Artifactory to complete the setup so that it can serve as a private docker registry and repository for private helm charts.
+
+Deploying Ingress Controller and managing Ingress Resources
+Before we discuss what ingress controllers are, it will be important to start off understanding about the Ingress resource.
+
+An ingress is an API object that manages external access to the services in a kubernetes cluster. It is capable to provide load balancing, SSL termination and name-based virtual hosting. In otherwords, Ingress exposes HTTP and HTTPS routes from outside the cluster to services within the cluster. Traffic routing is controlled by rules defined on the Ingress resource.
+
+Here is a simple example where an Ingress sends all its traffic to one Service:
+
+ *image credit:* kubernetes.io
+An ingress resource for Artifactory would like like below
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: artifactory
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: "tooling.artifactory.sandbox.svc.darey.io"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: artifactory
+            port:
+              number: 8082
+An Ingress needs apiVersion, kind, metadata and spec fields
+The name of an Ingress object must be a valid DNS subdomain name
+Ingress frequently uses annotations to configure some options depending on the Ingress controller.
+Different Ingress controllers support different annotations. Therefore it is important to be up to date with the ingress controller's specific documentation to know what annotations are supported.
+It is recommended to always specify the ingress class name with the spec ingressClassName: nginx. This is how the Ingress controller is selected, especially when there are multiple configured ingress controllers in the cluster.
+The domain darey.io should be replaced with your own domain.
+Ingress controller
+If you deploy the yaml configuration specified for the ingress resource without an ingress controller, it will not work. In order for the Ingress resource to work, the cluster must have an ingress controller running.
+
+Unlike other types of controllers which run as part of the kube-controller-manager. Such as the Node Controller, Replica Controller, Deployment Controller, Job Controller, or Cloud Controller. Ingress controllers are not started automatically with the cluster.
+
+Kubernetes as a project supports and maintains AWS, GCE, and NGINX ingress controllers.
+
+There are many other 3rd party Ingress controllers that provide similar functionalities with their own unique features, but the 3 mentioned earlier are currently supported and maintained by Kubernetes. Some of these other 3rd party Ingress controllers include but not limited to the following;
+
+* AKS Application Gateway Ingress Controller (Microsoft Azure)
+* Istio
+* Traefik
+* Ambassador
+* HA Proxy Ingress
+* Kong
+* Gloo
+
+
+[Click here](https://kubevious.io/blog/post/comparing-top-ingress-controllers-for-kubernetes#comparison-matrix) to see the comaparison between some ingress controllers. It is important to understand key features among them so that one can make informed decisions when making a choice for a business need.
+It is possible to deploy more than one ingress controller in the same cluster, applying the use of ```ingress class```. By specifying the spec ```ingressClassName``` field on the ingress object, the appropriate ingress controller will be used tby the ingress resource.
+
+
+
+**Deploy Nginx Ingress Controller**
+We will use the Nginx ingress controller as a choice of ingress controller. It is the default choice in kubernetes projects. It is reliable and easy to use.
+
+For [official guide](https://kubernetes.github.io/ingress-nginx/deploy/) to install nginx ingress controller.
+
+Using the **Helm** approach, according to the official guide;
+
+1. Install Nginx Ingress Controller in the ```ingress-nginx``` namespace
+
+```
+helm upgrade --install ingress-nginx ingress-nginx \
+  --repo https://kubernetes.github.io/ingress-nginx \
+  --namespace ingress-nginx --create-namespace
+```
+
+**Notice:**
+
+
 
