@@ -12,6 +12,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: staxx-artifactory-artifactory-nginx
+            name: artifactory
             port:
-              number: 80
+              number: 8082

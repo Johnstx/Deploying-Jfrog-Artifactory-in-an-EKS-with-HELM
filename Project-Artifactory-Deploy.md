@@ -545,8 +545,194 @@ helm upgrade --install ingress-nginx ingress-nginx \
   --repo https://kubernetes.github.io/ingress-nginx \
   --namespace ingress-nginx --create-namespace
 ```
+OR
+
+```
+kubectl create ns ingress-nginx 
+```
+
+```
+helm repo add ingress-nginx  https://kubernetes.github.io/ingress-nginx
+```
+
+```
+helm repo update
+```
+
+```
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --version 4.8.3 -n ingress-nginx
+```
+![alt text](<images/17. nginx controller.jpg>)
 
 **Notice:**
+This command is idempotent:
+
+* if the ingress controller is not installed, it will install it,
+
+* if the ingress controller is already installed, it will upgrade it.
+
+2. A few pods should start in the ingress-nginx namespace:
+
+```
+kubectl get pods -n ingress-nginx
+```
+
+3. Check the load balancer in the  AWS console
+
+![alt text](<images/17. load balancers.jpg>)
+
+```
+kubectl get svc -n ingress-nginx
+```
+![alt text](<images/17. nginx controller.jpg>)
+
+The ``ingress-nginx-controller`` service that was created is of the type ``LoadBalancer``. That will be the load balancer to be used by all applications which require external access, and is using this ingress controller.
+
+Copy the **EXTERNAL-IP** and paste on the browser.
+
+![alt text](<images/19. load balance dns in url.jpg>)
+
+**Deploy Artifactory Ingress**
+
+Now, it is time to configure the ingress so that we can route traffic to the Artifactory internal service, through the ingress controller's load balancer.
+
+![alt text](images/20.png)
+
+Notice the `spec` section with the configuration that selects the ingress controller using the **ingressClassName**.
+
+* To get the ingressClass of the ingress controller, run - 
+```
+kubectl get ingressclass -n ingress-nginx
+``` 
+
+![alt text](<images/19.B get ingressclass for the artifactory ingress resource.jpg>)
 
 
 
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: artifactory
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: "tooling.artifactory.itentity.xyz"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: artifactory
+            port:
+              number: 80
+
+```
+Create the ingress resource in the tools namespace.
+```
+kubectl apply -f <filename.yaml> -n tools
+```
+* To ge the details on the created ingress resource, run - 
+
+```
+kubectl get ingress -n tools
+```
+![alt text](<images/19.C get ingress in tools (artifactory_ingress).jpg>)
+
+**NB**
+* CLASS -  The nginx controller class name ```nginx```
+* HOSTS - The hostname to be used in the browser  tooling.artifactory.itentity.xyz
+* ADDRESS - The loadbalancer address that was created by the ingress controller
+
+**Configure DNS**
+As we noticed, the load balancer address which we pasted on the browser is too long, Ideally, a DNS record that is more human readbale will be created to direct request to the load balancer. Which is what we have conigured here - ``` - host: "tooling.artifactory.itentity.xyz"```
+Without a DNS configuration, the host address will be unable to reach the load balancer.
+
+The ```itentity.xyz``` part of the domain is the configured HOSTED ZONE in AWS. 
+
+
+If the domain is  purchased directly from AWS, the hosted zone will be automatically configured. But if the domain is registered with a different provider such as **freenon** or **namechaep**, create the hosted zone and update the name servers.
+
+
+**Create Route53 record**
+Within the hosted zone is where all the necessary DNS records will be created. Since we are working on Artifactory, lets create the record to point to the ingress controller's loadbalancer. There are 2 options. You can either use the *CNAME* or *AWS Alias*
+
+**CNAME** Method
+
+1. Select the **HOSTED ZONE** you wish to use, and click on the create record button
+2. Add the subdomain `tooling.artifactory`, and select the record type `CNAME`
+3. Record created successfully
+
+![alt text](<images/21. CNAME.jpg>)
+
+*After the CNAME set-up, confirm if the domain has propagated sucessfully using **www.dnschecker.org***
+
+![alt text](<images/22. dns checker.jpg>)
+
+**AWS Alias Method**
+
+1. In the create record section, type in the record name, and toggle the ```alias``` button to enable an alias. An alias is of the ```A ```DNS record type which basically routes directly to the load balancer. In the ```choose endpoint``` bar, select ```Alias to Application and Classic Load Balancer```
+
+2. Select the region and the load balancer required. You will not need to type in the load balancer, as it will already populate.
+
+For detailed read on selecting between CNAME and Alias based records, read the [official documentation](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resource-record-sets-choosing-alias-non-alias.html)
+
+**Visiting the application from the browser**
+So far, we now have an application running in Kubernetes that is also accessible externally. Use the full URL of the domain to access the artifactory application (tooling.artifactory.itentity.xyz).
+
+![alt text](<images/24. domain url check.jpg>)
+
+The application has been successfullly setup for access, but is not secure yet. So next, we setup the certificates.
+
+**Exploring the Artifactory Web UI**
+
+1. Access the default username and password - Run a helm command to output the same message after the initial install. 
+```
+helm test artifactory -n tools
+```
+2. Insert the username and password to load the Get Started page
+![alt text](<images/24. domain url check.jpg>)
+
+3. Reset the admin password
+
+![alt text](<images/25. jfrog password change.jpg>)
+
+4. Activate the Artifactory License. You will need to purchase a license to use Artifactory enterprise features.
+
+5. For learning purposes, you can apply for a free trial license. [Simply fill the form here](https://jfrog.com/start-free/) and a license key will be delivered to your email in few minutes.
+
+![alt text](<images/26. jfrog key.jpg>)
+
+6. Set the Base URL. Ensure to use ```https```
+
+![alt text](<images/27. jfrog setup.jpg>)
+
+7. Skip the Proxy setting and Skip creation of repositories for now. You will create them yourself later on.
+
+![alt text](<images/28. jfrog setup skip.jpg>)
+
+![alt text](<images/29. create repo skip.jpg>)
+
+8. finish Setup.
+![alt text](<images/31. welcome to jfrog.jpg>)
+
+Next, its time to fix the TLS/SSL configuration so that we will have a trusted HTTPS URL
+
+**Deploying Cert-Manager and managing TLS/SSL for Ingress**
+
+Transport Layer Security (TLS), the successor of the now-deprecated Secure Sockets Layer (SSL), is a cryptographic protocol designed to provide communications security over a computer network.
+The TLS protocol aims primarily to provide cryptography, including privacy (confidentiality), integrity, and authenticity through the use of certificates, between two or more communicating computer applications.
+The certificates required to implement TLS must be issued by a trusted Certificate Authority (CA).
+To see the list of trusted root Certification Authorities (CA) and their certificates used by Google Chrome, you need to use the Certificate Manager built inside Google Chrome 
+
+**Certificate Management in Kubernetes**
+Ensuring that trusted certificates can be requested and issued from certificate authorities dynamically is a tedious process. Managing the certificates per application and keeping track of expiry is also a lot of overhead. Complex scripts or programs have to be created to achieve this. [Cert-Manager](https://cert-manager.io/) offers solution to this complexity.
+
+Cert-Manager is an open-source tool that automates the management and issuance of TLS (Transport Layer Security) certificates within Kubernetes clusters. It is commonly used in Kubernetes environments to handle the lifecycle of certificates, including acquiring, renewing, and managing them for services and applications.
+
+cert-manager adds certificates and certificate issuers as resource types in Kubernetes clusters, and simplifies the process of obtaining, renewing and using those certificates.
+
+Similar to how Ingress Controllers are able to enable the creation of *Ingress* resource in the cluster, so also cert-manager enables the possibility to create certificate resource, and a few other resources that makes certificate management seamless.
+
+It can issue certificates from a variety of supported sources, including Let's Encrypt, HashiCorp Vault, and Venafi as well as private PKI. The issued certificates get stored as kubernetes secret which holds both the private key and public certificate.
